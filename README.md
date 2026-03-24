@@ -52,17 +52,19 @@ An intelligent email sorting extension for Thunderbird that uses Large Language 
 
 1. Clone this repository
 2. Make changes to the source files
-3. Zip the files (manifest.json, background.js, popup.html, popup.js) into a .xpi file
+3. Zip the files (manifest.json, config.js, utils.js, api.js, background.js, popup.html, popup.js) into a .xpi file
 4. Install in Thunderbird for testing
 
 ### File Structure
 
 ```
 ├── manifest.json      # Extension manifest
-├── background.js      # Background script (API calls, email processing)
+├── config.js          # Configuration constants and settings
+├── utils.js           # Utility functions (sleep, JSON parsing, colors)
+├── api.js             # LLM API interaction functions
+├── background.js      # Background script (email processing, message handlers)
 ├── popup.html         # Extension popup UI
-├── popup.js           # Popup logic
-└── modules/           # Legacy files (can be removed)
+└── popup.js           # Popup logic and UI management
 ```
 
 ## License

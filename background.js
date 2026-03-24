@@ -5,88 +5,12 @@
  * It communicates with the LLM API, processes emails, and moves them to appropriate folders.
  */
 
-// Configuration constants
-const API_CONFIG = {
-  DEFAULT_ENDPOINT: "http://localhost:1234/v1",
-  DELAY_BETWEEN_REQUESTS: 500,
-  LLM_TEMPERATURE: 0.3,
-  GENERATION_TEMPERATURE: 0.7,
-  MAX_TOKENS: 1000
-};
-
-const DEFAULT_PROMPTS = {
-  CATEGORIZATION: `Categorize this email into one of these categories: WORK, PERSONAL, SPAM, NEWSLETTER, OTHER.
-
-Subject: {subject}
-Body: {body}
-Available folders: {folders}
-
-Respond in JSON format ONLY, like: {"category": "WORK", "confidence": 0.95}`,
-
-  GENERATION: `You are an AI assistant tasked with creating email sorting rules.
-
-Here are the available email folders: {folders}
-
-For EACH folder, create a specific rule explaining what types of emails should go there. Be very specific and detailed.
-
-Format your response as:
-Folder: FolderName -> Detailed rule explaining when to use this folder
-
-Then, after all the rules, provide the final sorting prompt that another AI can use.
-
-The final prompt should:
-1. List all the folder rules you created
-2. Instruct the AI to analyze email subject and body
-3. Choose the best matching folder based on the rules
-4. Output only JSON: {"category": "folder_name", "confidence": 0.95}
-
-Generate the complete prompt with rules and instructions.`
-};
-
-const MESSAGES = {
-  NO_FOLDERS: "No folders found for this account",
-  EMPTY_RESPONSE: "LLM returned empty response",
-  API_ERROR: "API error",
-  GENERATION_ERROR: "Error generating prompt"
-};
-
-const STORAGE_KEYS = {
-  ENDPOINT: "lmEndpoint",
-  CUSTOM_PROMPT: "customPrompt",
-  ACCOUNT_PROMPT: (accountId) => `prompt_${accountId}`
-};
-
 // Global configuration state
 const CONFIG = {
-  lmStudioEndpoint: API_CONFIG.DEFAULT_ENDPOINT,
-  delayBetweenRequests: API_CONFIG.DELAY_BETWEEN_REQUESTS,
+  lmStudioEndpoint: window.API_CONFIG.DEFAULT_ENDPOINT,
+  delayBetweenRequests: window.API_CONFIG.DELAY_BETWEEN_REQUESTS,
   llmModel: null
 };
-
-/**
- * Simple sleep function to add delays between API requests
- * @param {number} ms - Milliseconds to sleep
- * @returns {Promise} Promise that resolves after the delay
- */
-async function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Fetches available models from the LM Studio API
- * @returns {Array} Array of available model objects
- */
-async function getAvailableModels() {
-  try {
-    const response = await fetch(`${CONFIG.lmStudioEndpoint}/models`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.data || [];
-  } catch (error) {
-    console.error("Error fetching models:", error);
-    return [];
-  }
-}
 
 /**
  * Selects the LLM model to use for categorization
@@ -96,7 +20,7 @@ async function getAvailableModels() {
 async function selectModel() {
   if (CONFIG.llmModel) return CONFIG.llmModel;
   
-  const models = await getAvailableModels();
+  const models = await window.API.fetchAvailableModels(CONFIG.lmStudioEndpoint);
   if (models.length === 0) {
     console.error("No models available in LM Studio");
     return null;
@@ -187,42 +111,10 @@ async function categorizeMail(subject, bodyText, folders, customPrompt) {
       return null;
     }
 
-    let prompt = customPrompt || DEFAULT_PROMPTS.CATEGORIZATION;
-
-    // Replace placeholders
-    prompt = prompt.replace("{subject}", subject);
-    prompt = prompt.replace("{body}", bodyText || "(no body)");
-    prompt = prompt.replace("{folders}", folders.join(", "));
-
-    const response = await fetch(`${CONFIG.lmStudioEndpoint}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: "user", content: prompt }],
-        temperature: API_CONFIG.LLM_TEMPERATURE
-      })
-    });
-
-    if (!response.ok) {
-      console.error("LLM API error:", response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    const responseText = data.choices?.[0]?.message?.content || "";
+    // Use the API module for categorization
+    const result = await window.API.categorizeEmail(CONFIG.lmStudioEndpoint, model, subject, bodyText, folders, customPrompt);
+    if (!result) return null;
     
-    console.log("LLM raw response:", responseText); // Add this log
-    
-    // Defensief JSON parsing
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("No JSON found in response:", responseText);
-      return null;
-    }
-
-    const result = JSON.parse(jsonMatch[0]);
-    console.log("Parsed categorization:", result); // Add this log
     return {
       category: result.category || "OTHER",
       confidence: result.confidence || 0.0,
@@ -240,21 +132,8 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         const endpoint = request.endpoint || CONFIG.lmStudioEndpoint;
-        const url = endpoint.endsWith("/v1") ? endpoint : endpoint + "/v1";
-        const modelsUrl = `${url}/models`;
-        console.log("Fetching models from:", modelsUrl);
-        
-        const response = await fetch(modelsUrl, { mode: "cors" });
-        console.log("Fetch response status:", response.status);
-        
-        if (!response.ok) {
-          sendResponse({ success: false, error: "API error: " + response.status });
-          return;
-        }
-        
-        const data = await response.json();
-        console.log("Models fetched successfully:", data);
-        sendResponse({ success: true, models: data.data || [] });
+        const models = await window.API.fetchAvailableModels(endpoint);
+        sendResponse({ success: true, models: models });
       } catch (error) {
         console.error("Error fetching models:", error.message, error.stack);
         sendResponse({ success: false, error: error.message });
@@ -285,36 +164,15 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Get folders for the account
         const folders = await getAccountFolders(accountId);
         if (folders.length === 0) {
-          sendResponse({ success: false, error: MESSAGES.NO_FOLDERS });
+          sendResponse({ success: false, error: window.MESSAGES.NO_FOLDERS });
           return;
         }
         
-        // Create prompt for LLM to generate sorting rules
-        const generationPrompt = DEFAULT_PROMPTS.GENERATION.replace("{folders}", folders.map(f => f.name).join(", "));
-
-        // Send to LLM
-        const url = endpoint.endsWith("/v1") ? endpoint : endpoint + "/v1";
-        const response = await fetch(`${url}/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: model,
-            messages: [{ role: "user", content: generationPrompt }],
-            temperature: API_CONFIG.GENERATION_TEMPERATURE,
-            max_tokens: API_CONFIG.MAX_TOKENS
-          })
-        });
-
-        if (!response.ok) {
-          sendResponse({ success: false, error: "LLM API error: " + response.status });
-          return;
-        }
-
-        const data = await response.json();
-        const generatedPrompt = data.choices?.[0]?.message?.content || "";
+        // Generate the prompt using the API module
+        const generatedPrompt = await window.API.generateSortingPrompt(endpoint, model, folders);
         
-        if (!generatedPrompt.trim()) {
-          sendResponse({ success: false, error: MESSAGES.EMPTY_RESPONSE });
+        if (!generatedPrompt) {
+          sendResponse({ success: false, error: window.MESSAGES.EMPTY_RESPONSE });
           return;
         }
 
@@ -352,9 +210,9 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
               console.log("Available folders:", accountFolders.map(f => f.name));
               
               // Try to load account-specific prompt
-              const stored = await browser.storage.local.get(`prompt_${accountId}`);
-              if (stored[`prompt_${accountId}`]) {
-                customPrompt = stored[`prompt_${accountId}`];
+              const stored = await browser.storage.local.get(window.STORAGE_KEYS.ACCOUNT_PROMPT(accountId));
+              if (stored[window.STORAGE_KEYS.ACCOUNT_PROMPT(accountId)]) {
+                customPrompt = stored[window.STORAGE_KEYS.ACCOUNT_PROMPT(accountId)];
                 console.log("Using account-specific prompt");
               }
             } else {
@@ -413,7 +271,7 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.log("Categorized:", result);
           
           if (i < messageIds.length - 1) {
-            await sleep(CONFIG.delayBetweenRequests);
+            await window.Utils.sleep(CONFIG.delayBetweenRequests);
           }
         }
         

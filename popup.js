@@ -11,7 +11,7 @@ const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const cancelSettingsBtn = document.getElementById("cancelSettingsBtn");
 const currentEndpointDisplay = document.getElementById("currentEndpoint");
 
-let currentEndpoint = "http://localhost:1234/v1";
+let currentEndpoint = window.API_CONFIG.DEFAULT_ENDPOINT;
 let customPrompt = "";
 
 function showStatus(message, type) {
@@ -43,7 +43,7 @@ function displayResults(results) {
     const moved = result.moved ? "✓ Moved" : "✗ Not moved";
     const target = result.targetFolder ? ` to ${result.targetFolder}` : "";
     
-    html += `<div style="margin-bottom: 8px; padding: 6px; background: white; border-radius: 3px; border-left: 3px solid ${getCategoryColor(category)};">
+    html += `<div style="margin-bottom: 8px; padding: 6px; background: white; border-radius: 3px; border-left: 3px solid ${window.Utils.getCategoryColor(category)};">
       <strong>${result.subject}</strong><br>
       <small>From: ${result.from}</small><br>
       <small>Category: <strong>${category}</strong> | Confidence: ${confidence} | Model: ${model}</small><br>
@@ -55,18 +55,6 @@ function displayResults(results) {
   resultsDiv.style.display = "block";
 }
 
-function getCategoryColor(category) {
-  const colors = {
-    "WORK": "#2196F3",
-    "PERSONAL": "#4CAF50", 
-    "SPAM": "#F44336",
-    "NEWSLETTER": "#FF9800",
-    "OTHER": "#9E9E9E",
-    "ERROR": "#607D8B"
-  };
-  return colors[category] || "#607D8B";
-}
-
 function updateEndpointDisplay() {
   currentEndpointDisplay.textContent = currentEndpoint.replace("/v1", "");
 }
@@ -74,13 +62,13 @@ function updateEndpointDisplay() {
 let currentAccountId = null; // Track which account's prompt we're editing
 
 async function loadSettings() {
-  const stored = await browser.storage.local.get(["lmEndpoint", "customPrompt"]);
-  if (stored.lmEndpoint) {
-    currentEndpoint = stored.lmEndpoint;
+  const stored = await browser.storage.local.get([window.STORAGE_KEYS.ENDPOINT, window.STORAGE_KEYS.CUSTOM_PROMPT]);
+  if (stored[window.STORAGE_KEYS.ENDPOINT]) {
+    currentEndpoint = stored[window.STORAGE_KEYS.ENDPOINT];
     updateEndpointDisplay();
   }
   if (stored.customPrompt) {
-    customPrompt = stored.customPrompt;
+    customPrompt = stored[window.STORAGE_KEYS.CUSTOM_PROMPT];
     promptInput.value = customPrompt;
   } else {
     // Set default prompt
@@ -99,9 +87,9 @@ Respond in JSON format ONLY, like: {"category": "WORK", "confidence": 0.95}`;
 }
 
 async function loadPromptForAccount(accountId) {
-  const stored = await browser.storage.local.get(`prompt_${accountId}`);
-  if (stored[`prompt_${accountId}`]) {
-    promptInput.value = stored[`prompt_${accountId}`];
+  const stored = await browser.storage.local.get(window.STORAGE_KEYS.ACCOUNT_PROMPT(accountId));
+  if (stored[window.STORAGE_KEYS.ACCOUNT_PROMPT(accountId)]) {
+    promptInput.value = stored[window.STORAGE_KEYS.ACCOUNT_PROMPT(accountId)];
     currentAccountId = accountId;
   } else {
     // Load default or current prompt
@@ -214,11 +202,11 @@ saveSettingsBtn.addEventListener("click", async () => {
   currentEndpoint = normalizedEndpoint;
   
   // Save endpoint
-  await browser.storage.local.set({ lmEndpoint: normalizedEndpoint });
+  await browser.storage.local.set({ [window.STORAGE_KEYS.ENDPOINT]: normalizedEndpoint });
   
   // Save prompt - either per account or globally
   if (currentAccountId) {
-    await browser.storage.local.set({ [`prompt_${currentAccountId}`]: promptValue });
+    await browser.storage.local.set({ [window.STORAGE_KEYS.ACCOUNT_PROMPT(currentAccountId)]: promptValue });
     customPrompt = promptValue; // Also update global for consistency
   } else {
     customPrompt = promptValue;

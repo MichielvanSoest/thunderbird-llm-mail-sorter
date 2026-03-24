@@ -22,6 +22,6 @@
     "default_popup": "popup.html"
   },
   "background": {
-    "scripts": ["background.js"]
+    "scripts": ["config.js", "utils.js", "api.js", "background.js"]
   }
 }
