@@ -1,0 +1,24 @@
+# Thunderbird Extension
+*.xpi
+*.zip
+
+# Node.js (if used for building)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak

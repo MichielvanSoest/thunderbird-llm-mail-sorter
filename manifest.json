@@ -1,0 +1,27 @@
+{
+  "manifest_version": 2,
+  "name": "LLM Mail Sorter",
+  "version": "0.1",
+  "description": "Sorteer mails automatisch met LLM",
+  "applications": {
+    "gecko": {
+      "id": "llm-sorter@local",
+      "strict_min_version": "78.0"
+    }
+  },
+  "permissions": [
+    "messagesRead",
+    "messagesMove",
+    "accountsRead",
+    "storage",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "browser_action": {
+    "default_title": "LLM Mail Sorter",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  }
+}
