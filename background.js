@@ -1,17 +1,32 @@
-console.log("LLM Mail Sorter Background started");
+/**
+ * Thunderbird LLM Mail Sorter - Background Script
+ * 
+ * This script handles the core email sorting functionality using local LLMs.
+ * It communicates with the LLM API, processes emails, and moves them to appropriate folders.
+ */
 
+// Default LM Studio endpoint (can be configured by user)
 const DEFAULT_ENDPOINT = "http://localhost:1234/v1";
 
 const CONFIG = {
   lmStudioEndpoint: DEFAULT_ENDPOINT,
-  delayBetweenRequests: 500,
+  delayBetweenRequests: 500, // Delay between API calls to avoid rate limiting
   llmModel: null
 };
 
+/**
+ * Simple sleep function to add delays between API requests
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise} Promise that resolves after the delay
+ */
 async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Fetches available models from the LM Studio API
+ * @returns {Array} Array of available model objects
+ */
 async function getAvailableModels() {
   try {
     const response = await fetch(`${CONFIG.lmStudioEndpoint}/models`);
@@ -24,6 +39,11 @@ async function getAvailableModels() {
   }
 }
 
+/**
+ * Selects the LLM model to use for categorization
+ * Uses the configured model or auto-selects the first available one
+ * @returns {string|null} The selected model ID or null if none available
+ */
 async function selectModel() {
   if (CONFIG.llmModel) return CONFIG.llmModel;
   
@@ -38,6 +58,11 @@ async function selectModel() {
   return CONFIG.llmModel;
 }
 
+/**
+ * Extracts relevant content from an email message
+ * @param {number} messageId - The Thunderbird message ID
+ * @returns {Object|null} Object with subject, from, and bodyText, or null if failed
+ */
 async function extractMessageContent(messageId) {
   try {
     const full = await messenger.messages.getFull(messageId);
@@ -46,6 +71,7 @@ async function extractMessageContent(messageId) {
     
     let bodyText = "";
     if (full.plainTextBody) {
+      // Limit body text to avoid token limits and improve performance
       bodyText = full.plainTextBody.substring(0, 500);
     }
     
@@ -56,6 +82,11 @@ async function extractMessageContent(messageId) {
   }
 }
 
+/**
+ * Recursively collects all folders from an account, including subfolders
+ * @param {number} accountId - The Thunderbird account ID
+ * @returns {Array} Array of folder objects
+ */
 async function getAccountFolders(accountId) {
   try {
     const accounts = await messenger.accounts.list();
@@ -67,6 +98,10 @@ async function getAccountFolders(accountId) {
     
     const folders = [];
     
+    /**
+     * Recursive function to collect folders and subfolders
+     * @param {Array} folderList - List of folders to process
+     */
     function collectFolders(folderList) {
       for (const folder of folderList) {
         folders.push(folder);
@@ -87,6 +122,14 @@ async function getAccountFolders(accountId) {
   }
 }
 
+/**
+ * Categorizes an email using the LLM API
+ * @param {string} subject - Email subject
+ * @param {string} bodyText - Email body text
+ * @param {Array} folders - Array of folder names available
+ * @param {string} customPrompt - Custom prompt template (optional)
+ * @returns {Object|null} Categorization result with category, confidence, and model
+ */
 async function categorizeMail(subject, bodyText, folders, customPrompt) {
   try {
     const model = await selectModel();
