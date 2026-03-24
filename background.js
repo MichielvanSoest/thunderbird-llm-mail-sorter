@@ -5,12 +5,61 @@
  * It communicates with the LLM API, processes emails, and moves them to appropriate folders.
  */
 
-// Default LM Studio endpoint (can be configured by user)
-const DEFAULT_ENDPOINT = "http://localhost:1234/v1";
+// Configuration constants
+const API_CONFIG = {
+  DEFAULT_ENDPOINT: "http://localhost:1234/v1",
+  DELAY_BETWEEN_REQUESTS: 500,
+  LLM_TEMPERATURE: 0.3,
+  GENERATION_TEMPERATURE: 0.7,
+  MAX_TOKENS: 1000
+};
 
+const DEFAULT_PROMPTS = {
+  CATEGORIZATION: `Categorize this email into one of these categories: WORK, PERSONAL, SPAM, NEWSLETTER, OTHER.
+
+Subject: {subject}
+Body: {body}
+Available folders: {folders}
+
+Respond in JSON format ONLY, like: {"category": "WORK", "confidence": 0.95}`,
+
+  GENERATION: `You are an AI assistant tasked with creating email sorting rules.
+
+Here are the available email folders: {folders}
+
+For EACH folder, create a specific rule explaining what types of emails should go there. Be very specific and detailed.
+
+Format your response as:
+Folder: FolderName -> Detailed rule explaining when to use this folder
+
+Then, after all the rules, provide the final sorting prompt that another AI can use.
+
+The final prompt should:
+1. List all the folder rules you created
+2. Instruct the AI to analyze email subject and body
+3. Choose the best matching folder based on the rules
+4. Output only JSON: {"category": "folder_name", "confidence": 0.95}
+
+Generate the complete prompt with rules and instructions.`
+};
+
+const MESSAGES = {
+  NO_FOLDERS: "No folders found for this account",
+  EMPTY_RESPONSE: "LLM returned empty response",
+  API_ERROR: "API error",
+  GENERATION_ERROR: "Error generating prompt"
+};
+
+const STORAGE_KEYS = {
+  ENDPOINT: "lmEndpoint",
+  CUSTOM_PROMPT: "customPrompt",
+  ACCOUNT_PROMPT: (accountId) => `prompt_${accountId}`
+};
+
+// Global configuration state
 const CONFIG = {
-  lmStudioEndpoint: DEFAULT_ENDPOINT,
-  delayBetweenRequests: 500, // Delay between API calls to avoid rate limiting
+  lmStudioEndpoint: API_CONFIG.DEFAULT_ENDPOINT,
+  delayBetweenRequests: API_CONFIG.DELAY_BETWEEN_REQUESTS,
   llmModel: null
 };
 
@@ -138,12 +187,7 @@ async function categorizeMail(subject, bodyText, folders, customPrompt) {
       return null;
     }
 
-    let prompt = customPrompt || `Categorize this email into one of these categories: WORK, PERSONAL, SPAM, NEWSLETTER, OTHER.
-    
-Subject: ${subject}
-Body: ${bodyText || "(no body)"}
-
-Respond in JSON format ONLY, like: {"category": "WORK", "confidence": 0.95}`;
+    let prompt = customPrompt || DEFAULT_PROMPTS.CATEGORIZATION;
 
     // Replace placeholders
     prompt = prompt.replace("{subject}", subject);
@@ -156,7 +200,7 @@ Respond in JSON format ONLY, like: {"category": "WORK", "confidence": 0.95}`;
       body: JSON.stringify({
         model: model,
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.3
+        temperature: API_CONFIG.LLM_TEMPERATURE
       })
     });
 
@@ -241,22 +285,12 @@ browser.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Get folders for the account
         const folders = await getAccountFolders(accountId);
         if (folders.length === 0) {
-          sendResponse({ success: false, error: "No folders found for this account" });
+          sendResponse({ success: false, error: MESSAGES.NO_FOLDERS });
           return;
         }
         
         // Create prompt for LLM to generate sorting rules
-        const generationPrompt = `Based on these email folder names: ${folders.join(", ")}
-
-Create a concise email sorting prompt that includes:
-
-1. For each folder, a brief rule: "Folder: {folder_name} -> {sorting_rule}"
-2. Instructions for the LLM to analyze email subject and body
-3. Choose the most appropriate folder based on the rules
-4. Use placeholders {subject}, {body}, {folders}
-5. Output only JSON with "category" and "confidence" fields
-
-Generate ONLY the prompt text that another LLM can use directly to sort emails. Do not include code, documentation, or examples - just the prompt.`;
+        const generationPrompt = DEFAULT_PROMPTS.GENERATION.replace("{folders}", folders.map(f => f.name).join(", "));
 
         // Send to LLM
         const url = endpoint.endsWith("/v1") ? endpoint : endpoint + "/v1";
@@ -266,8 +300,8 @@ Generate ONLY the prompt text that another LLM can use directly to sort emails. 
           body: JSON.stringify({
             model: model,
             messages: [{ role: "user", content: generationPrompt }],
-            temperature: 0.7,
-            max_tokens: 1000
+            temperature: API_CONFIG.GENERATION_TEMPERATURE,
+            max_tokens: API_CONFIG.MAX_TOKENS
           })
         });
 
@@ -280,7 +314,7 @@ Generate ONLY the prompt text that another LLM can use directly to sort emails. 
         const generatedPrompt = data.choices?.[0]?.message?.content || "";
         
         if (!generatedPrompt.trim()) {
-          sendResponse({ success: false, error: "LLM returned empty response" });
+          sendResponse({ success: false, error: MESSAGES.EMPTY_RESPONSE });
           return;
         }
 

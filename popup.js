@@ -166,7 +166,6 @@ async function initModels() {
     showStatus(debugMsg, "error");
     sortBtn.disabled = true;
     modelSelect.innerHTML = '<option>No models available</option>';
-    return;
   }
   
   models.forEach(model => {
